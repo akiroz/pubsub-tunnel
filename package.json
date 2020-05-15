@@ -1,0 +1,28 @@
+{
+    "scripts": {
+        "test": "ts-mocha test/index.spec.ts"
+    },
+    "dependencies": {
+        "pcap": "^3.1.0",
+        "yaml": "^1.9.2"
+    },
+    "devDependencies": {
+        "@types/mocha": "^7.0.2",
+        "husky": "^4.2.5",
+        "mocha": "^7.1.2",
+        "prettier": "^2.0.5",
+        "pretty-quick": "^2.0.1",
+        "ts-mocha": "^7.0.0",
+        "typescript": "^3.8.3"
+    },
+    "prettier": {
+        "tabWidth": 4,
+        "trailingComma": "es5",
+        "printWidth": 120
+    },
+    "husky": {
+        "hooks": {
+            "pre-commit": "tsc --noEmit && pretty-quick --staged"
+        }
+    }
+}
