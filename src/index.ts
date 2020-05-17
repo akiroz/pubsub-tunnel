@@ -1,10 +1,7 @@
 import { randomBytes } from "crypto";
-import { EventEmitter } from "events";
 import LRU from "lru-cache";
 import ipInt from "ip-to-int";
 import * as pcap from "pcap";
-import IPv4 from "pcap/decode/ipv4";
-import NullPacket from "pcap/decode/null_packet";
 
 export type PubSubClient = {
     publish(topic: string, payload: Buffer): Promise<void>;
@@ -26,9 +23,10 @@ const loopbackIp = ipInt("127.0.0.1").toInt();
 export function server(
     pubsub: PubSubClient,
     opts: {
-        tunnelTopic: string;
+        topic: string;
         addressStart: string;
         addressRange: number;
+        interface?: string;
         sessionIdleTimeout?: number;
     }
 ) {
@@ -41,6 +39,7 @@ export function server(
             delete idCache[val];
         },
     });
+
     let allocNumber = 0;
     function allocIp(idStr: string): number {
         const startIp = ipInt(opts.addressStart).toInt();
@@ -53,8 +52,9 @@ export function server(
         idCache[idStr] = newIp;
         return newIp;
     }
-    const session = pcap.createSession("lo0", { filter: `not dst host 127.0.0.1` });
-    pubSub.subscribe(opts.tunnelTopic, async (payload) => {
+
+    const session = pcap.createSession(opts.interface || "lo0", { filter: `not dst host 127.0.0.1` });
+    pubsub.subscribe(opts.topic, async (payload) => {
         const id = payload.slice(0, 16);
         const packet = payload.slice(16);
         const idStr = encodeBase64URL(id);
@@ -63,42 +63,41 @@ export function server(
         nat(packet.slice(4), ip, loopbackIp);
         session.inject(packet);
     });
+
     session.on("packet", ({ header, buf }: { header: Buffer; buf: Buffer }) => {
         const len = header.readUInt32LE(8);
         const packet = buf.slice(0, len);
         const ip = packet.readUInt32BE(4 + 16);
         const idStr = ipCache.get(ip);
-        if (idStr) pubSub.publish(`${opts.tunnelTopic}/${idStr}`, buf);
+        if (idStr) pubsub.publish(`${opts.topic}/${idStr}`, packet);
     });
+
     return session;
 }
 
-export function client(pubsub: PubSubClient, opts: { tunnelTopic: string; bindAddress: string }) {
+export function client(
+    pubsub: PubSubClient,
+    opts: {
+        topic: string;
+        bindAddress: string;
+        interface?: string;
+    }
+) {
     const id = randomBytes(16);
     const idStr = encodeBase64URL(id);
     const bindIp = ipInt(opts.bindAddress).toInt();
-    const session = pcap.createSession("lo0", { filter: `dst host ${opts.bindAddress}` });
-    pubSub.subscribe(`${opts.tunnelTopic}/${idStr}`, async (packet) => {
+
+    const session = pcap.createSession(opts.interface || "lo0", { filter: `dst host ${opts.bindAddress}` });
+    pubsub.subscribe(`${opts.topic}/${idStr}`, async (packet) => {
         nat(packet.slice(4), bindIp, loopbackIp);
-        console.log(new IPv4().decode(packet, 4));
         session.inject(packet);
     });
+
     session.on("packet", ({ header, buf }: { header: Buffer; buf: Buffer }) => {
         const len = header.readUInt32LE(8);
         const packet = buf.slice(0, len);
-        pubSub.publish(opts.tunnelTopic, Buffer.concat([id, packet]));
+        pubsub.publish(opts.topic, Buffer.concat([id, packet]));
     });
+
     return session;
 }
-
-const ee = new EventEmitter();
-const pubSub: PubSubClient = {
-    async publish(topic, payload) {
-        await new Promise((r) => {
-            setImmediate(() => (ee.emit(topic, payload), r()));
-        });
-    },
-    async subscribe(topic, handler) {
-        ee.on(topic, handler);
-    },
-};

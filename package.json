@@ -11,10 +11,14 @@
     },
     "devDependencies": {
         "@types/mocha": "^7.0.2",
+        "@types/server": "^1.0.2",
+        "axios": "^0.19.2",
         "husky": "^4.2.5",
         "mocha": "^7.1.2",
+        "net-ping": "^1.2.3",
         "prettier": "^2.0.5",
         "pretty-quick": "^2.0.1",
+        "server": "^1.0.27",
         "ts-mocha": "^7.0.0",
         "ts-node": "^8.10.1",
         "typescript": "^3.8.3"
