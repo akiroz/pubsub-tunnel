@@ -10,6 +10,6 @@ jobs:
             - uses: actions/setup-node@v1
               with:
                   node-version: "10.x"
-            - run: sudo apt install -y libpcap libpcap-dev
+            - run: sudo apt install -y libpcap-dev
             - run: yarn
             - run: sudo yarn test
