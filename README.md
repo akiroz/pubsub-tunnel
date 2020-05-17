@@ -2,7 +2,7 @@
 
 ![test](https://github.com/akiroz/pubsub-tunnel/workflows/test/badge.svg)
 
-A simple network tunning mechanism for Pub/Sub transports
+A simple network tunneling mechanism for Pub/Sub transports
 
 Tunnels traffic at layer 3 (IP) of the OSI model
 
