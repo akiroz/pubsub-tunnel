@@ -11,5 +11,5 @@ jobs:
               with:
                   node-version: "10.x"
             - run: sudo apt install -y libpcap-dev
-            - run: yarn
+            - run: sudo yarn
             - run: sudo yarn test
