@@ -1,3 +1,4 @@
+import os from "os";
 import { randomBytes } from "crypto";
 import LRU from "lru-cache";
 import ipInt from "ip-to-int";
@@ -26,10 +27,10 @@ export function server(
         topic: string;
         addressStart: string;
         addressRange: number;
-        interface?: string;
         sessionIdleTimeout?: number;
     }
 ) {
+    const ifce = os.platform() === "darwin" ? "lo0" : "lo";
     const idCache: { [id: string]: number } = {};
     const ipCache = new LRU<number, string>({
         max: opts.addressRange - 1,
@@ -53,7 +54,7 @@ export function server(
         return newIp;
     }
 
-    const session = pcap.createSession(opts.interface || "lo0", { filter: `not dst host 127.0.0.1` });
+    const session = pcap.createSession(ifce, { filter: `not dst host 127.0.0.1` });
     pubsub.subscribe(opts.topic, async (payload) => {
         const id = payload.slice(0, 16);
         const packet = payload.slice(16);
@@ -80,14 +81,14 @@ export function client(
     opts: {
         topic: string;
         bindAddress: string;
-        interface?: string;
     }
 ) {
+    const ifce = os.platform() === "darwin" ? "lo0" : "lo";
     const id = randomBytes(16);
     const idStr = encodeBase64URL(id);
     const bindIp = ipInt(opts.bindAddress).toInt();
 
-    const session = pcap.createSession(opts.interface || "lo0", { filter: `dst host ${opts.bindAddress}` });
+    const session = pcap.createSession(ifce, { filter: `dst host ${opts.bindAddress}` });
     pubsub.subscribe(`${opts.topic}/${idStr}`, async (packet) => {
         nat(packet.slice(4), bindIp, loopbackIp);
         session.inject(packet);

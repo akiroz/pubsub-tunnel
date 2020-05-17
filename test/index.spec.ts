@@ -14,10 +14,10 @@ const pubsub: PubSubClient = {
         ee.on(topic, handler);
     },
 };
-server(pubsub, { topic: "tunnel", addressStart: "127.0.1.1", addressRange: 10, interface: "lo" });
-client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.2", interface: "lo" });
-client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.3", interface: "lo" });
-client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.4", interface: "lo" });
+server(pubsub, { topic: "tunnel", addressStart: "127.0.1.1", addressRange: 10 });
+client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.2" });
+client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.3" });
+client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.4" });
 
 describe("Tunnel", function () {
     it("wait for tunnel", async () => {
