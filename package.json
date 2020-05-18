@@ -1,16 +1,19 @@
 {
+    "name": "@akiroz/pubsub-tunnel",
+    "version": "0.0.2",
     "scripts": {
-        "test": "ts-mocha test/index.spec.ts"
+        "test": "ts-mocha test/index.spec.ts",
+        "prepublish": "tsc"
     },
     "dependencies": {
-        "@types/lru-cache": "^5.1.0",
-        "@types/node": "^14.0.1",
         "ip-to-int": "^0.3.1",
         "lru-cache": "^5.1.1",
         "pcap": "^3.1.0"
     },
     "devDependencies": {
+        "@types/lru-cache": "^5.1.0",
         "@types/mocha": "^7.0.2",
+        "@types/node": "^14.0.1",
         "@types/server": "^1.0.2",
         "axios": "^0.19.2",
         "husky": "^4.2.5",
