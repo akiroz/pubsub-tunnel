@@ -1,6 +1,8 @@
 {
     "name": "@akiroz/pubsub-tunnel",
-    "version": "0.0.2",
+    "version": "0.0.4",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
     "scripts": {
         "test": "ts-mocha test/index.spec.ts",
         "prepublish": "tsc"
