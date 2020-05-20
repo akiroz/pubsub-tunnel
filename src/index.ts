@@ -29,9 +29,7 @@ function coercePacket(packet: Buffer, link_type: pcap.LinkType): Buffer | null {
                 );
                 return null;
             }
-            const nullHeader = Buffer.alloc(4);
-            nullHeader.writeUInt32BE(2); // IPv4
-            return Buffer.concat([nullHeader, packet.slice(14)]);
+            return packet.slice(14);
         }
         case "LINKTYPE_LINUX_SLL": {
             const etherType = packet.readUInt16BE(14);
@@ -39,14 +37,19 @@ function coercePacket(packet: Buffer, link_type: pcap.LinkType): Buffer | null {
                 console.log(`[pubsub-tunnel] Unsupported SLLPacket (not IPv4) etherType=${etherType.toString(16)}`);
                 return null;
             }
-            const nullHeader = Buffer.alloc(4);
-            nullHeader.writeUInt32BE(2); // IPv4
-            return Buffer.concat([nullHeader, packet.slice(16)]);
+            return packet.slice(16);
         }
         case "LINKTYPE_NULL": {
             const pfType = packet[0] === 0 && packet[1] === 0 ? packet[3] : packet[0];
             if (pfType !== 2) {
                 console.log(`[pubsub-tunnel] Unsupported NullPacket (not IPv4) pfType=${pfType}`);
+                return null;
+            }
+            return packet.slice(4);
+        }
+        case "LINKTYPE_RAW": {
+            if (packet[0] >> 4 != 4) {
+                console.log(`[pubsub-tunnel] Unsupported RawPacket (not IPv4)`);
                 return null;
             }
             return packet;
@@ -107,11 +110,11 @@ export function server(
     session.on("packet", ({ header, buf, link_type }: pcap.PacketWithHeader) => {
         const len = header.readUInt32LE(8);
         const packet = buf.slice(0, len);
-        const nullPacket = coercePacket(packet, link_type);
-        if (!nullPacket) return;
-        const ip = nullPacket.readUInt32BE(4 + 16);
+        const rawPacket = coercePacket(packet, link_type);
+        if (!rawPacket) return;
+        const ip = rawPacket.readUInt32BE(16);
         const idStr = ipCache.get(ip);
-        if (idStr) pubsub.publish(`${opts.topic}/${idStr}`, nullPacket);
+        if (idStr) pubsub.publish(`${opts.topic}/${idStr}`, rawPacket);
     });
 
     return session;
@@ -138,9 +141,9 @@ export function client(
     session.on("packet", ({ header, buf, link_type }: pcap.PacketWithHeader) => {
         const len = header.readUInt32LE(8);
         const packet = buf.slice(0, len);
-        const nullPacket = coercePacket(packet, link_type);
-        if (!nullPacket) return;
-        pubsub.publish(opts.topic, Buffer.concat([id, nullPacket]));
+        const rawPacket = coercePacket(packet, link_type);
+        if (!rawPacket) return;
+        pubsub.publish(opts.topic, Buffer.concat([id, rawPacket]));
     });
 
     return session;
