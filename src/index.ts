@@ -19,6 +19,45 @@ function nat(packet: Buffer, src: number, dst: number) {
     packet.writeUInt32BE(dst, 16);
 }
 
+function coercePacket(packet: Buffer, link_type: pcap.LinkType): Buffer | null {
+    switch (link_type) {
+        case "LINKTYPE_ETHERNET": {
+            const etherType = packet.readUInt16BE(12);
+            if (etherType !== 0x800) {
+                console.log(
+                    `[pubsub-tunnel] Unsupported EthernetPacket (not IPv4) etherType=${etherType.toString(16)}`
+                );
+                return null;
+            }
+            const nullHeader = Buffer.alloc(4);
+            nullHeader.writeUInt32BE(2); // IPv4
+            return Buffer.concat([nullHeader, packet.slice(14)]);
+        }
+        case "LINKTYPE_LINUX_SLL": {
+            const etherType = packet.readUInt16BE(14);
+            if (etherType !== 0x800) {
+                console.log(`[pubsub-tunnel] Unsupported SLLPacket (not IPv4) etherType=${etherType.toString(16)}`);
+                return null;
+            }
+            const nullHeader = Buffer.alloc(4);
+            nullHeader.writeUInt32BE(2); // IPv4
+            return Buffer.concat([nullHeader, packet.slice(16)]);
+        }
+        case "LINKTYPE_NULL": {
+            const pfType = packet[0] === 0 && packet[1] === 0 ? packet[3] : packet[0];
+            if (pfType !== 2) {
+                console.log(`[pubsub-tunnel] Unsupported NullPacket (not IPv4) pfType=${pfType}`);
+                return null;
+            }
+            return packet;
+        }
+        default: {
+            console.log(`[pubsub-tunnel] Unsupported link_type ${link_type}`);
+            return null;
+        }
+    }
+}
+
 const loopbackIp = ipInt("127.0.0.1").toInt();
 
 export function server(
@@ -65,12 +104,14 @@ export function server(
         session.inject(packet);
     });
 
-    session.on("packet", ({ header, buf }: { header: Buffer; buf: Buffer }) => {
+    session.on("packet", ({ header, buf, link_type }: pcap.PacketWithHeader) => {
         const len = header.readUInt32LE(8);
         const packet = buf.slice(0, len);
-        const ip = packet.readUInt32BE(4 + 16);
+        const nullPacket = coercePacket(packet, link_type);
+        if (!nullPacket) return;
+        const ip = nullPacket.readUInt32BE(4 + 16);
         const idStr = ipCache.get(ip);
-        if (idStr) pubsub.publish(`${opts.topic}/${idStr}`, packet);
+        if (idStr) pubsub.publish(`${opts.topic}/${idStr}`, nullPacket);
     });
 
     return session;
@@ -94,10 +135,12 @@ export function client(
         session.inject(packet);
     });
 
-    session.on("packet", ({ header, buf }: { header: Buffer; buf: Buffer }) => {
+    session.on("packet", ({ header, buf, link_type }: pcap.PacketWithHeader) => {
         const len = header.readUInt32LE(8);
         const packet = buf.slice(0, len);
-        pubsub.publish(opts.topic, Buffer.concat([id, packet]));
+        const nullPacket = coercePacket(packet, link_type);
+        if (!nullPacket) return;
+        pubsub.publish(opts.topic, Buffer.concat([id, nullPacket]));
     });
 
     return session;
