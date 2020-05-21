@@ -7,11 +7,6 @@
         "test": "ts-mocha test/index.spec.ts",
         "prepublish": "tsc"
     },
-    "dependencies": {
-        "ip-to-int": "^0.3.1",
-        "lru-cache": "^5.1.1",
-        "pcap": "^3.1.0"
-    },
     "devDependencies": {
         "@types/lru-cache": "^5.1.0",
         "@types/mocha": "^7.0.2",
@@ -25,8 +20,16 @@
         "pretty-quick": "^2.0.1",
         "server": "^1.0.27",
         "ts-mocha": "^7.0.0",
-        "ts-node": "^8.10.1",
-        "typescript": "^3.8.3"
+        "ts-node": "^8.10.1"
+    },
+    "dependencies": {
+        "ip-to-int": "^0.3.1",
+        "lru-cache": "^5.1.1",
+        "typescript": "^3.9.3"
+    },
+    "optionalDependencies": {
+        "node-tuntap": "^1.0.6",
+        "pcap": "^3.1.0"
     },
     "prettier": {
         "tabWidth": 4,

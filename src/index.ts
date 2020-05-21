@@ -2,21 +2,63 @@ import os from "os";
 import { randomBytes } from "crypto";
 import LRU from "lru-cache";
 import ipInt from "ip-to-int";
-import * as pcap from "pcap";
+import { PacketWithHeader, PcapSession } from "pcap";
 
 export type PubSubClient = {
     publish(topic: string, payload: Buffer): Promise<void>;
     subscribe(topic: string, handler: (payload: Buffer) => Promise<void>): Promise<void>;
 };
 
-const loopbackIp = ipInt("127.0.0.1").toInt();
-const linkOffset = os.platform() === "darwin" ? 4 : 14;
-const linkHeader = (() => {
-    const buf = Buffer.alloc(linkOffset);
-    if (os.platform() === "darwin") buf.writeUInt32LE(2);
-    else buf.writeUInt16BE(0x800, 12);
-    return buf;
-})();
+const localhost = ipInt("127.0.0.1").toInt();
+
+class NetworkDriver {
+    platform: NodeJS.Platform;
+    closed = false;
+
+    // TUN Driver
+
+    // Pcap Driver
+    pcapHeader = Buffer.alloc(4);
+    pcapSession: PcapSession;
+
+    static async createSession(): Promise<NetworkDriver> {
+        const drv = new NetworkDriver();
+        drv.platform = os.platform();
+        if (drv.platform === "linux") {
+        } else {
+            const pcap = require("pcap");
+            drv.pcapHeader.writeUInt32LE(2);
+            drv.pcapSession = pcap.createSession("lo0", { filter: "ip and not dst host 127.0.0.1" });
+        }
+        return drv;
+    }
+
+    inject(packet: Buffer) {
+        if (this.closed) return;
+        if (this.platform === "linux") {
+        } else {
+            this.pcapSession.inject(Buffer.concat([this.pcapHeader, packet]));
+        }
+    }
+
+    onPacket(handler: (packet: Buffer) => void) {
+        if (this.platform === "linux") {
+        } else {
+            this.pcapSession.on("packet", ({ header, buf }: PacketWithHeader) => {
+                const len = header.readUInt32LE(8);
+                handler(Buffer.from(buf.slice(4, len)));
+            });
+        }
+    }
+
+    close() {
+        this.closed = true;
+        if (this.platform === "linux") {
+        } else {
+            this.pcapSession.close();
+        }
+    }
+}
 
 function encodeBase64URL(data: Buffer): string {
     return Buffer.from(data).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
@@ -28,7 +70,7 @@ function nat(packet: Buffer, src: number, dst: number) {
     packet.writeUInt32BE(dst, 16);
 }
 
-export function server(
+export async function server(
     pubsub: PubSubClient,
     opts: {
         topic: string;
@@ -36,8 +78,8 @@ export function server(
         addressRange: number;
         sessionIdleTimeout?: number;
     }
-) {
-    const ifce = os.platform() === "darwin" ? "lo0" : "lo";
+): Promise<NetworkDriver> {
+    const net = await NetworkDriver.createSession();
     const idCache: { [id: string]: number } = {};
     const ipCache = new LRU<number, string>({
         max: opts.addressRange - 1,
@@ -61,50 +103,46 @@ export function server(
         return newIp;
     }
 
-    const session = pcap.createSession(ifce, { filter: `ip and not dst host 127.0.0.1` });
     pubsub.subscribe(opts.topic, async (payload) => {
         const id = payload.slice(0, 16);
         const packet = payload.slice(16);
         const idStr = encodeBase64URL(id);
         const ip = idCache[idStr] || allocIp(idStr);
         ipCache.get(ip); // renew age
-        nat(packet, ip, loopbackIp);
-        session.inject(Buffer.concat([linkHeader, packet]));
+        nat(packet, ip, localhost);
+        net.inject(packet);
     });
 
-    session.on("packet", ({ header, buf }: pcap.PacketWithHeader) => {
-        const len = header.readUInt32LE(8);
-        const packet = buf.slice(linkOffset, len);
+    net.onPacket((packet) => {
         const idStr = ipCache.get(packet.readUInt32BE(16));
         if (idStr) pubsub.publish(`${opts.topic}/${idStr}`, packet);
     });
 
-    return session;
+    return net;
 }
 
-export function client(
+export async function client(
     pubsub: PubSubClient,
     opts: {
         topic: string;
         bindAddress: string;
     }
-) {
-    const ifce = os.platform() === "darwin" ? "lo0" : "lo";
+): Promise<NetworkDriver> {
+    const net = await NetworkDriver.createSession();
     const id = randomBytes(16);
     const idStr = encodeBase64URL(id);
     const bindIp = ipInt(opts.bindAddress).toInt();
 
-    const session = pcap.createSession(ifce, { filter: `dst host ${opts.bindAddress}` });
     pubsub.subscribe(`${opts.topic}/${idStr}`, async (packet) => {
-        nat(packet, bindIp, loopbackIp);
-        session.inject(Buffer.concat([linkHeader, packet]));
+        nat(packet, bindIp, localhost);
+        net.inject(packet);
     });
 
-    session.on("packet", ({ header, buf }: pcap.PacketWithHeader) => {
-        const len = header.readUInt32LE(8);
-        const packet = buf.slice(linkOffset, len);
-        pubsub.publish(opts.topic, Buffer.concat([id, packet]));
+    net.onPacket((packet) => {
+        if (packet.readUInt32BE(16) === bindIp) {
+            pubsub.publish(opts.topic, Buffer.concat([id, packet]));
+        }
     });
 
-    return session;
+    return net;
 }
