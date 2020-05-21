@@ -65,9 +65,14 @@ function encodeBase64URL(data: Buffer): string {
 }
 
 function nat(packet: Buffer, src: number, dst: number) {
-    packet.writeUInt16BE(0, 10); // clear checksum
+    packet.writeUInt16LE(0, 10); // clear checksum
     packet.writeUInt32BE(src, 12);
     packet.writeUInt32BE(dst, 16);
+    const len = packet[0] & 0x0F;
+    let sum = 0;
+    for(let i = 0; i < len*2; i++) sum += packet.readUInt16LE(i*2);
+    while(sum > 0xFFFF) sum = (sum & 0xFFFF) + (sum >> 16);
+    packet.writeUInt16LE(~sum & 0xFFFF, 10);
 }
 
 export async function server(
