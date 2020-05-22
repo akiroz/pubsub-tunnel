@@ -1,30 +1,40 @@
 import os from "os";
+import stream from "stream";
 import { randomBytes } from "crypto";
 import LRU from "lru-cache";
-import ipInt from "ip-to-int";
 import { PacketWithHeader, PcapSession } from "pcap";
+import { cidr as CIDR, ip as IP } from "node-cidr";
 
 export type PubSubClient = {
     publish(topic: string, payload: Buffer): Promise<void>;
     subscribe(topic: string, handler: (payload: Buffer) => Promise<void>): Promise<void>;
 };
 
-const localhost = ipInt("127.0.0.1").toInt();
-
 class NetworkDriver {
     platform: NodeJS.Platform;
     closed = false;
 
     // TUN Driver
+    tunSession: stream.Duplex & { close(): void };
 
     // Pcap Driver
     pcapHeader = Buffer.alloc(4);
     pcapSession: PcapSession;
 
-    static async createSession(): Promise<NetworkDriver> {
+    static async createSession(opts: { localAddress?: string; cidrBlock?: string }): Promise<NetworkDriver> {
         const drv = new NetworkDriver();
         drv.platform = os.platform();
         if (drv.platform === "linux") {
+            const tuntap = require("node-tuntap");
+            drv.tunSession = tuntap({
+                type: "tun",
+                mtu: 65535,
+                addr: opts.localAddress,
+                mask: CIDR.netmask(opts.cidrBlock),
+                persist: false,
+                up: true,
+                running: true,
+            });
         } else {
             const pcap = require("pcap");
             drv.pcapHeader.writeUInt32LE(2);
@@ -36,6 +46,7 @@ class NetworkDriver {
     inject(packet: Buffer) {
         if (this.closed) return;
         if (this.platform === "linux") {
+            this.tunSession.write(packet);
         } else {
             this.pcapSession.inject(Buffer.concat([this.pcapHeader, packet]));
         }
@@ -43,6 +54,7 @@ class NetworkDriver {
 
     onPacket(handler: (packet: Buffer) => void) {
         if (this.platform === "linux") {
+            this.tunSession.on("data", (packet) => handler(packet));
         } else {
             this.pcapSession.on("packet", ({ header, buf }: PacketWithHeader) => {
                 const len = header.readUInt32LE(8);
@@ -54,6 +66,7 @@ class NetworkDriver {
     close() {
         this.closed = true;
         if (this.platform === "linux") {
+            this.tunSession.close();
         } else {
             this.pcapSession.close();
         }
@@ -79,15 +92,18 @@ export async function server(
     pubsub: PubSubClient,
     opts: {
         topic: string;
-        addressStart: string;
-        addressRange: number;
+        cidrBlock: string;
+        localAddress?: string;
         sessionIdleTimeout?: number;
     }
 ): Promise<NetworkDriver> {
-    const net = await NetworkDriver.createSession();
+    const localIp = IP.toInt(os.platform() === "darwin" ? "127.0.0.1" : opts.localAddress);
+    const startIp = IP.toInt(CIDR.address(opts.cidrBlock));
+    const numIps = IP.toInt(CIDR.max(opts.cidrBlock)) - startIp;
+    const net = await NetworkDriver.createSession(opts);
     const idCache: { [id: string]: number } = {};
     const ipCache = new LRU<number, string>({
-        max: opts.addressRange - 1,
+        max: numIps,
         maxAge: opts.sessionIdleTimeout || 2 * 60 * 60 * 1000,
         updateAgeOnGet: true,
         dispose(key, val) {
@@ -97,10 +113,9 @@ export async function server(
 
     let allocNumber = 0;
     function allocIp(idStr: string): number {
-        const startIp = ipInt(opts.addressStart).toInt();
         while (ipCache.has(startIp + allocNumber)) {
             allocNumber += 1;
-            allocNumber %= opts.addressRange;
+            allocNumber %= numIps;
         }
         const newIp = startIp + allocNumber;
         ipCache.set(newIp, idStr);
@@ -114,7 +129,7 @@ export async function server(
         const idStr = encodeBase64URL(id);
         const ip = idCache[idStr] || allocIp(idStr);
         ipCache.get(ip); // renew age
-        nat(packet, ip, localhost);
+        nat(packet, ip, localIp);
         net.inject(packet);
     });
 
@@ -131,15 +146,20 @@ export async function client(
     opts: {
         topic: string;
         bindAddress: string;
+        localAddress?: string;
     }
 ): Promise<NetworkDriver> {
-    const net = await NetworkDriver.createSession();
+    const net = await NetworkDriver.createSession({
+        localAddress: opts.bindAddress,
+        cidrBlock: "0.0.0.0/32",
+    });
     const id = randomBytes(16);
     const idStr = encodeBase64URL(id);
-    const bindIp = ipInt(opts.bindAddress).toInt();
+    const bindIp = IP.toInt(opts.bindAddress);
+    const localIp = IP.toInt(os.platform() === "darwin" ? "127.0.0.1" : opts.localAddress);
 
     pubsub.subscribe(`${opts.topic}/${idStr}`, async (packet) => {
-        nat(packet, bindIp, localhost);
+        nat(packet, bindIp, localIp);
         net.inject(packet);
     });
 

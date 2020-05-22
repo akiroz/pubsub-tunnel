@@ -4,6 +4,7 @@ import { PubSubClient, server, client } from "../src/index";
 import * as ping from "net-ping";
 import http from "server";
 import axios from "axios";
+import { platform } from "os";
 
 const ee = new EventEmitter();
 const pubsub: PubSubClient = {
@@ -14,10 +15,22 @@ const pubsub: PubSubClient = {
         ee.on(topic, handler);
     },
 };
-server(pubsub, { topic: "tunnel", addressStart: "127.0.1.1", addressRange: 10 });
-client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.2" });
-client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.3" });
-client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.4" });
+
+let baseIp: string;
+
+if (platform() === "darwin") {
+    baseIp = "127.0.0";
+    server(pubsub, { topic: "tunnel", cidrBlock: "127.0.1.1/24" });
+    client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.2" });
+    client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.3" });
+    client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.4" });
+} else {
+    baseIp = "10.200.0";
+    server(pubsub, { topic: "tunnel", cidrBlock: "10.200.1.2/24", localAddress: "10.200.1.1" });
+    client(pubsub, { topic: "tunnel", bindAddress: "10.200.0.2", localAddress: "10.200.0.1" });
+    client(pubsub, { topic: "tunnel", bindAddress: "10.200.0.3", localAddress: "10.200.0.1" });
+    client(pubsub, { topic: "tunnel", bindAddress: "10.200.0.4", localAddress: "10.200.0.1" });
+}
 
 describe("Tunnel", function () {
     it("wait for tunnel", async () => {
@@ -27,24 +40,24 @@ describe("Tunnel", function () {
     it("ping", async () => {
         const session = ping.createSession();
         const target = await new Promise((rsov, rjct) => {
-            session.pingHost("127.0.0.2", (err, target) => {
+            session.pingHost(baseIp + ".2", (err, target) => {
                 if (err) rjct(err);
                 rsov(target);
             });
         });
-        assert.equal(target, "127.0.0.2");
+        assert.equal(target, baseIp + ".2");
         session.close();
     });
 
     it("http get", async () => {
         const s = await http({ port: 3000, security: false }, [http.router.get("/test", () => "ok")]);
-        const { data: getData } = await axios.get("http://127.0.0.3:3000/test");
+        const { data: getData } = await axios.get(`http://${baseIp}.3:3000/test`);
         assert.equal(getData, "ok");
     });
 
     it("http post", async () => {
         const s = await http({ port: 3001, security: false }, [http.router.post("/echo", (ctx) => ctx.data)]);
-        const { data: postData } = await axios.post("http://127.0.0.4:3001/echo", { foo: "foo" });
+        const { data: postData } = await axios.post(`http://${baseIp}.4:3001/echo`, { foo: "foo" });
         assert.equal(postData.foo, "foo");
     });
 });
