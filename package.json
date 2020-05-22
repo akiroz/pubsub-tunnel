@@ -28,7 +28,7 @@
         "typescript": "^3.9.3"
     },
     "optionalDependencies": {
-        "node-tuntap": "^1.0.6",
+        "ioctl": "^2.0.2",
         "pcap": "^3.1.0"
     },
     "prettier": {
