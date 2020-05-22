@@ -10,5 +10,5 @@ const pubsub: PubSubClient = {
         ee.on(topic, handler);
     },
 };
-server(pubsub, { topic: "tunnel", cidrBlock: "10.200.1.2/24", localAddress: "10.200.1.1" });
-client(pubsub, { topic: "tunnel", bindAddress: "10.200.0.2", localAddress: "10.200.0.1" });
+server(pubsub, { topic: "tunnel", cidrBlock: "10.16.1.2/24", localAddress: "10.16.1.1" });
+client(pubsub, { topic: "tunnel", bindAddress: "10.16.0.3", localAddress: "10.16.0.2" });

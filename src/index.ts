@@ -1,4 +1,6 @@
-import os from "os";
+import { promisify } from "util";
+import { execFile } from "child_process";
+import { platform } from "os";
 import { promises as fs, ReadStream, WriteStream, createReadStream, createWriteStream } from "fs";
 import { randomBytes } from "crypto";
 import LRU from "lru-cache";
@@ -15,19 +17,6 @@ class NetworkDriver {
     closed = false;
 
     // TUN Driver
-    tun = {
-        AF_INET: 2,
-        // flags
-        IFF_TUN: 1,
-        IFF_NO_PI: 0x1000,
-        IFF_UP: 1,
-        // calls
-        TUNSETIFF: 0x400454ca,
-        SIOCSIFADDR: 0x8916,
-        SIOCSIFNETMASK: 0x891c,
-        SIOCSIFMTU: 0x8922,
-        SIOCSIFFLAGS: 0x8914,
-    };
     tunName: string;
     tunFd: fs.FileHandle;
     tunReadStream: ReadStream;
@@ -39,38 +28,26 @@ class NetworkDriver {
 
     static async createSession(opts: { localAddress?: string; cidrBlock?: string }): Promise<NetworkDriver> {
         const drv = new NetworkDriver();
-        drv.platform = os.platform();
+        drv.platform = platform();
         if (drv.platform === "linux") {
             const ioctl = require("ioctl-napi");
             drv.tunFd = await fs.open("/dev/net/tun", "r+");
             drv.tunReadStream = createReadStream(null, { fd: drv.tunFd.fd });
             drv.tunWriteStream = createWriteStream(null, { fd: drv.tunFd.fd });
 
+            const IFF_TUN = 0x1;
+            const IFF_NO_PI = 0x1000;
+            const TUNSETIFF = 0x400454ca;
             const ifr = Buffer.alloc(18);
-            const { TUNSETIFF, IFF_TUN, IFF_NO_PI } = drv.tun;
             ifr.writeUInt16LE(IFF_TUN | IFF_NO_PI, 16);
             ioctl(drv.tunFd.fd, TUNSETIFF, ifr);
+
             const nameEnd = [...ifr].indexOf(0);
             drv.tunName = ifr.toString("ascii", 0, nameEnd);
-
-            const sockaddr = Buffer.alloc(32);
-            const { AF_INET, SIOCSIFADDR, SIOCSIFNETMASK } = drv.tun;
-            sockaddr.write(drv.tunName);
-            sockaddr.writeUInt16LE(AF_INET, 16);
-            sockaddr.writeUInt32BE(IP.toInt(opts.localAddress), 18);
-            ioctl(drv.tunFd.fd, SIOCSIFADDR, sockaddr);
-            sockaddr.writeUInt32BE(IP.toInt(CIDR.netmask(opts.cidrBlock)), 2);
-            //ioctl(drv.tunFd.fd, SIOCSIFNETMASK, Buffer.concat([drv.tunName, sockaddr]));
-
-            const { SIOCSIFMTU } = drv.tun;
-            const mtu = Buffer.alloc(4);
-            mtu.writeUInt32LE(65535);
-            //ioctl(drv.tunFd.fd, SIOCSIFMTU, Buffer.concat([drv.tunName, mtu]));
-
-            const { SIOCSIFFLAGS, IFF_UP } = drv.tun;
-            const flags = Buffer.alloc(2);
-            mtu.writeUInt16LE(IFF_UP);
-            //ioctl(drv.tunFd.fd, SIOCSIFFLAGS, Buffer.concat([drv.tunName, flags]));
+            const prefix = CIDR.mask(opts.cidrBlock);
+            await promisify(execFile)("ip", ["addr", "add", `${opts.localAddress}/${prefix}`, "dev", drv.tunName]);
+            await promisify(execFile)("ip", ["link", "set", drv.tunName, "mtu", "65535"]);
+            await promisify(execFile)("ip", ["link", "set", drv.tunName, "up"]);
         } else {
             const pcap = require("pcap");
             drv.pcapHeader.writeUInt32LE(2);
@@ -135,7 +112,7 @@ export async function server(
         sessionIdleTimeout?: number;
     }
 ): Promise<NetworkDriver> {
-    const localIp = IP.toInt(os.platform() === "darwin" ? "127.0.0.1" : opts.localAddress);
+    const localIp = IP.toInt(platform() === "darwin" ? "127.0.0.1" : opts.localAddress);
     const startIp = IP.toInt(CIDR.address(opts.cidrBlock));
     const numIps = IP.toInt(CIDR.max(opts.cidrBlock)) - startIp;
     const net = await NetworkDriver.createSession(opts);
@@ -188,13 +165,13 @@ export async function client(
     }
 ): Promise<NetworkDriver> {
     const net = await NetworkDriver.createSession({
-        localAddress: opts.bindAddress,
-        cidrBlock: "0.0.0.0/32",
+        localAddress: opts.localAddress,
+        cidrBlock: "0.0.0.0/31",
     });
     const id = randomBytes(16);
     const idStr = encodeBase64URL(id);
     const bindIp = IP.toInt(opts.bindAddress);
-    const localIp = IP.toInt(os.platform() === "darwin" ? "127.0.0.1" : opts.localAddress);
+    const localIp = IP.toInt(platform() === "darwin" ? "127.0.0.1" : opts.localAddress);
 
     pubsub.subscribe(`${opts.topic}/${idStr}`, async (packet) => {
         nat(packet, bindIp, localIp);
