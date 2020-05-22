@@ -1,5 +1,5 @@
 import os from "os";
-import stream from "stream";
+import { promises as fs, ReadStream, WriteStream, createReadStream, createWriteStream } from "fs";
 import { randomBytes } from "crypto";
 import LRU from "lru-cache";
 import { PacketWithHeader, PcapSession } from "pcap";
@@ -15,7 +15,23 @@ class NetworkDriver {
     closed = false;
 
     // TUN Driver
-    tunSession: stream.Duplex & { close(): void };
+    tun = {
+        AF_INET: 2,
+        // flags
+        IFF_TUN: 1,
+        IFF_NO_PI: 0x1000,
+        IFF_UP: 1,
+        // calls
+        TUNSETIFF: 0x400454ca,
+        SIOCSIFADDR: 0x8916,
+        SIOCSIFNETMASK: 0x891c,
+        SIOCSIFMTU: 0x8922,
+        SIOCSIFFLAGS: 0x8914,
+    };
+    tunName: string;
+    tunFd: fs.FileHandle;
+    tunReadStream: ReadStream;
+    tunWriteStream: WriteStream;
 
     // Pcap Driver
     pcapHeader = Buffer.alloc(4);
@@ -25,16 +41,36 @@ class NetworkDriver {
         const drv = new NetworkDriver();
         drv.platform = os.platform();
         if (drv.platform === "linux") {
-            const tuntap = require("node-tuntap");
-            drv.tunSession = tuntap({
-                type: "tun",
-                mtu: 65535,
-                addr: opts.localAddress,
-                mask: CIDR.netmask(opts.cidrBlock),
-                persist: false,
-                up: true,
-                running: true,
-            });
+            const ioctl = require("ioctl-napi");
+            drv.tunFd = await fs.open("/dev/net/tun", "r+");
+            drv.tunReadStream = createReadStream(null, { fd: drv.tunFd.fd });
+            drv.tunWriteStream = createWriteStream(null, { fd: drv.tunFd.fd });
+
+            const ifr = Buffer.alloc(18);
+            const { TUNSETIFF, IFF_TUN, IFF_NO_PI } = drv.tun;
+            ifr.writeUInt16LE(IFF_TUN | IFF_NO_PI, 16);
+            ioctl(drv.tunFd.fd, TUNSETIFF, ifr);
+            const nameEnd = [...ifr].indexOf(0);
+            drv.tunName = ifr.toString("ascii", 0, nameEnd);
+
+            const sockaddr = Buffer.alloc(32);
+            const { AF_INET, SIOCSIFADDR, SIOCSIFNETMASK } = drv.tun;
+            sockaddr.write(drv.tunName);
+            sockaddr.writeUInt16LE(AF_INET, 16);
+            sockaddr.writeUInt32BE(IP.toInt(opts.localAddress), 18);
+            ioctl(drv.tunFd.fd, SIOCSIFADDR, sockaddr);
+            sockaddr.writeUInt32BE(IP.toInt(CIDR.netmask(opts.cidrBlock)), 2);
+            //ioctl(drv.tunFd.fd, SIOCSIFNETMASK, Buffer.concat([drv.tunName, sockaddr]));
+
+            const { SIOCSIFMTU } = drv.tun;
+            const mtu = Buffer.alloc(4);
+            mtu.writeUInt32LE(65535);
+            //ioctl(drv.tunFd.fd, SIOCSIFMTU, Buffer.concat([drv.tunName, mtu]));
+
+            const { SIOCSIFFLAGS, IFF_UP } = drv.tun;
+            const flags = Buffer.alloc(2);
+            mtu.writeUInt16LE(IFF_UP);
+            //ioctl(drv.tunFd.fd, SIOCSIFFLAGS, Buffer.concat([drv.tunName, flags]));
         } else {
             const pcap = require("pcap");
             drv.pcapHeader.writeUInt32LE(2);
@@ -46,7 +82,7 @@ class NetworkDriver {
     inject(packet: Buffer) {
         if (this.closed) return;
         if (this.platform === "linux") {
-            this.tunSession.write(packet);
+            this.tunWriteStream.write(packet);
         } else {
             this.pcapSession.inject(Buffer.concat([this.pcapHeader, packet]));
         }
@@ -54,7 +90,7 @@ class NetworkDriver {
 
     onPacket(handler: (packet: Buffer) => void) {
         if (this.platform === "linux") {
-            this.tunSession.on("data", (packet) => handler(packet));
+            this.tunReadStream.on("data", (packet: Buffer) => handler(packet));
         } else {
             this.pcapSession.on("packet", ({ header, buf }: PacketWithHeader) => {
                 const len = header.readUInt32LE(8);
@@ -66,7 +102,9 @@ class NetworkDriver {
     close() {
         this.closed = true;
         if (this.platform === "linux") {
-            this.tunSession.close();
+            this.tunWriteStream.close();
+            this.tunReadStream.close();
+            this.tunFd.close();
         } else {
             this.pcapSession.close();
         }
@@ -81,11 +119,11 @@ function nat(packet: Buffer, src: number, dst: number) {
     packet.writeUInt16LE(0, 10); // clear checksum
     packet.writeUInt32BE(src, 12);
     packet.writeUInt32BE(dst, 16);
-    const len = packet[0] & 0x0F;
+    const len = packet[0] & 0x0f;
     let sum = 0;
-    for(let i = 0; i < len*2; i++) sum += packet.readUInt16LE(i*2);
-    while(sum > 0xFFFF) sum = (sum & 0xFFFF) + (sum >> 16);
-    packet.writeUInt16LE(~sum & 0xFFFF, 10);
+    for (let i = 0; i < len * 2; i++) sum += packet.readUInt16LE(i * 2);
+    while (sum > 0xffff) sum = (sum & 0xffff) + (sum >> 16);
+    packet.writeUInt16LE(~sum & 0xffff, 10);
 }
 
 export async function server(

@@ -393,7 +393,7 @@ binary-extensions@^2.0.0:
   resolved "https://registry.yarnpkg.com/binary-extensions/-/binary-extensions-2.0.0.tgz#23c0df14f6a88077f5f986c0d167ec03c3d5537c"
   integrity sha512-Phlt0plgpIIBOGTT/ehfFnbNlfsDEiqmzE2KRXoX1bLIlir4X/MR+zSyBEkL05ffWgnRSf/DXv+WrUAVr93/ow==
 
-bindings@^1.5.0:
+bindings@~1.5.0:
   version "1.5.0"
   resolved "https://registry.yarnpkg.com/bindings/-/bindings-1.5.0.tgz#10353c9e945334bc0511a6d90b38fbc7c9c504df"
   integrity sha512-p2q/t/mhvuOj/UeLlV6566GD/guowlr0hHxClI0W9m7MWYkL1F0hLo+0Aexs9HSPCtR1SXQ0TD3MMKrXZajbiQ==
@@ -1391,13 +1391,12 @@ inherits@2.0.3:
   resolved "https://registry.yarnpkg.com/inherits/-/inherits-2.0.3.tgz#633c2c83e3da42a502f52466022480f4208261de"
   integrity sha1-Yzwsg+PaQqUC9SRmAiSA9CCCYd4=
 
-ioctl@^2.0.2:
-  version "2.0.2"
-  resolved "https://registry.yarnpkg.com/ioctl/-/ioctl-2.0.2.tgz#21543f661cb1b044761cbf721f5dde6be08ed060"
-  integrity sha512-GPEiU99bJb3Z50JDRujQ9t+q4JaRvc1UrD7F5/kHDVWlRA3L4TMwqbMw/XIu/BzqccFP8OfsK+JIXmlAvJDs1g==
+ioctl-napi@^0.3.0:
+  version "0.3.0"
+  resolved "https://registry.yarnpkg.com/ioctl-napi/-/ioctl-napi-0.3.0.tgz#92e136f4671104e841bc91a7f97312e6d907afac"
+  integrity sha512-ZmRUpPi0LRI/e7xeR9rHKL0HwELIxLFXUhYWnJDmz6ZIAIwdZIFsJ6DyRaAT4nCcSPPVqYBFD2uYzC70U6p/ow==
   dependencies:
-    bindings "^1.5.0"
-    nan "^2.14.0"
+    bindings "~1.5.0"
 
 ipaddr.js@1.9.1:
   version "1.9.1"
