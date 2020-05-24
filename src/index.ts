@@ -35,6 +35,7 @@ class NetworkDriver {
             drv.tunReadStream = createReadStream(null, { fd: drv.tunFd.fd });
             drv.tunWriteStream = createWriteStream(null, { fd: drv.tunFd.fd });
 
+            // Use ioctl system call to create TUN device
             const IFF_TUN = 0x1;
             const IFF_NO_PI = 0x1000;
             const TUNSETIFF = 0x400454ca;
@@ -45,9 +46,8 @@ class NetworkDriver {
             const nameEnd = [...ifr].indexOf(0);
             drv.tunName = ifr.toString("ascii", 0, nameEnd);
             const prefix = CIDR.mask(opts.cidrBlock);
+            await promisify(execFile)("ip", ["link", "set", drv.tunName, "up", "multicast", "off", "mtu", "1500"]);
             await promisify(execFile)("ip", ["addr", "add", `${opts.localAddress}/${prefix}`, "dev", drv.tunName]);
-            await promisify(execFile)("ip", ["link", "set", drv.tunName, "mtu", "65535"]);
-            await promisify(execFile)("ip", ["link", "set", drv.tunName, "up"]);
         } else {
             const pcap = require("pcap");
             drv.pcapHeader.writeUInt32LE(2);
@@ -67,7 +67,11 @@ class NetworkDriver {
 
     onPacket(handler: (packet: Buffer) => void) {
         if (this.platform === "linux") {
-            this.tunReadStream.on("data", (packet: Buffer) => handler(packet));
+            this.tunReadStream.on("data", (packet: Buffer) => {
+                if (packet[0] >> 4 === 4) {
+                    handler(packet);
+                }
+            });
         } else {
             this.pcapSession.on("packet", ({ header, buf }: PacketWithHeader) => {
                 const len = header.readUInt32LE(8);
@@ -166,7 +170,7 @@ export async function client(
 ): Promise<NetworkDriver> {
     const net = await NetworkDriver.createSession({
         localAddress: opts.localAddress,
-        cidrBlock: "0.0.0.0/31",
+        cidrBlock: `${opts.bindAddress}/31`,
     });
     const id = randomBytes(16);
     const idStr = encodeBase64URL(id);
