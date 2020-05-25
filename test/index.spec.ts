@@ -21,15 +21,13 @@ let baseIp: string;
 if (platform() === "darwin") {
     baseIp = "127.0.0";
     server(pubsub, { topic: "tunnel", cidrBlock: "127.0.1.1/24" });
-    client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.2" });
     client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.3" });
-    client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.4" });
+    client(pubsub, { topic: "tunnel", bindAddress: "127.0.0.5" });
 } else {
     baseIp = "10.240.0";
     server(pubsub, { topic: "tunnel", cidrBlock: "10.240.1.2/24", localAddress: "10.240.1.1" });
     client(pubsub, { topic: "tunnel", bindAddress: "10.240.0.3", localAddress: "10.240.0.2" });
     client(pubsub, { topic: "tunnel", bindAddress: "10.240.0.5", localAddress: "10.240.0.4" });
-    client(pubsub, { topic: "tunnel", bindAddress: "10.240.0.7", localAddress: "10.240.0.6" });
 }
 
 describe("Tunnel", function () {
@@ -53,12 +51,6 @@ describe("Tunnel", function () {
         const s = await http({ port: 3000, security: false }, [http.router.get("/test", () => "ok")]);
         const { data: getData } = await axios.get(`http://${baseIp}.5:3000/test`);
         assert.equal(getData, "ok");
-    });
-
-    it("http post", async () => {
-        const s = await http({ port: 3001, security: false }, [http.router.post("/echo", (ctx) => ctx.data)]);
-        const { data: postData } = await axios.post(`http://${baseIp}.7:3001/echo`, { foo: "foo" });
-        assert.equal(postData.foo, "foo");
     });
 });
 
