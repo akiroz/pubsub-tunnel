@@ -29,7 +29,7 @@ if (platform() === "darwin") {
     server(pubsub, { topic: "tunnel", cidrBlock: "10.240.1.2/24", localAddress: "10.240.1.1" });
     client(pubsub, { topic: "tunnel", bindAddress: "10.240.0.3", localAddress: "10.240.0.2" });
     client(pubsub, { topic: "tunnel", bindAddress: "10.240.0.5", localAddress: "10.240.0.4" });
-    //client(pubsub, { topic: "tunnel", bindAddress: "10.240.0.7", localAddress: "10.240.0.6" });
+    client(pubsub, { topic: "tunnel", bindAddress: "10.240.0.7", localAddress: "10.240.0.6" });
 }
 
 describe("Tunnel", function () {

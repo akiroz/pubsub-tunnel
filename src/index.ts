@@ -129,27 +129,16 @@ function nat(packet: Buffer, src: number, dst: number) {
 
     // Protocol Handling
     switch (packet[9]) {
-        case 6: {
-            // TCP
+        case 6: // TCP
+        case 17: // UDP
             const pseudoHeader = constructPseudoHeader();
-            const cksumOffset = payloadOffset + 16;
+            const cksumOffset = payloadOffset + (packet[9] === 6 ? 16 : 6);
             packet.writeUInt16BE(0, cksumOffset);
             const cksum = checksum(Buffer.concat([pseudoHeader, packet.slice(payloadOffset)]));
             packet.writeUInt16BE(cksum, cksumOffset);
             break;
-        }
-        case 17: {
-            // UDP
-            const pseudoHeader = constructPseudoHeader();
-            const cksumOffset = payloadOffset + 6;
-            packet.writeUInt16BE(0, cksumOffset);
-            const cksum = checksum(Buffer.concat([pseudoHeader, packet.slice(payloadOffset)]));
-            packet.writeUInt16BE(cksum, cksumOffset);
-            break;
-        }
-        default: {
-            // No special handling
-        }
+        default:
+        // No special handling
     }
 }
 
