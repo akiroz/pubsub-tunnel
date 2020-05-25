@@ -46,7 +46,7 @@ class NetworkDriver {
             const nameEnd = [...ifr].indexOf(0);
             drv.tunName = ifr.toString("ascii", 0, nameEnd);
             const prefix = CIDR.mask(opts.cidrBlock);
-            await promisify(execFile)("ip", ["link", "set", drv.tunName, "up", "multicast", "off", "mtu", "65535"]);
+            await promisify(execFile)("ip", ["link", "set", drv.tunName, "up", "multicast", "off", "mtu", "1500"]);
             await promisify(execFile)("ip", ["addr", "add", `${opts.localAddress}/${prefix}`, "dev", drv.tunName]);
         } else {
             const pcap = require("pcap");
