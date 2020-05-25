@@ -46,7 +46,7 @@ class NetworkDriver {
             const nameEnd = [...ifr].indexOf(0);
             drv.tunName = ifr.toString("ascii", 0, nameEnd);
             const prefix = CIDR.mask(opts.cidrBlock);
-            await promisify(execFile)("ip", ["link", "set", drv.tunName, "up", "multicast", "off", "mtu", "1500"]);
+            await promisify(execFile)("ip", ["link", "set", drv.tunName, "up", "multicast", "off", "mtu", "65535"]);
             await promisify(execFile)("ip", ["addr", "add", `${opts.localAddress}/${prefix}`, "dev", drv.tunName]);
         } else {
             const pcap = require("pcap");
@@ -96,15 +96,61 @@ function encodeBase64URL(data: Buffer): string {
     return Buffer.from(data).toString("base64").replace(/=/g, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
+function checksum(buf: Buffer): number {
+    if (buf.length % 2 !== 0) buf = Buffer.concat([buf, Buffer.alloc(1)]);
+    let sum = 0;
+    for (let i = 0; i < buf.length / 2; i++) {
+        sum += buf.readUInt16BE(i * 2);
+    }
+    while (sum > 0xffff) {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    return sum ^ 0xffff;
+}
+
 function nat(packet: Buffer, src: number, dst: number) {
-    packet.writeUInt16LE(0, 10); // clear checksum
+    packet.writeUInt16LE(0, 10); // Clear checksum
     packet.writeUInt32BE(src, 12);
     packet.writeUInt32BE(dst, 16);
-    const len = packet[0] & 0x0f;
-    let sum = 0;
-    for (let i = 0; i < len * 2; i++) sum += packet.readUInt16LE(i * 2);
-    while (sum > 0xffff) sum = (sum & 0xffff) + (sum >> 16);
-    packet.writeUInt16LE(~sum & 0xffff, 10);
+
+    // Compute IP Checksum (Linux will verify)
+    const ihl = packet[0] & 0x0f;
+    const payloadOffset = ihl * 4;
+    packet.writeUInt16BE(checksum(packet.slice(0, payloadOffset)), 10);
+
+    function constructPseudoHeader() {
+        const pseudoHeader = Buffer.alloc(12);
+        pseudoHeader.writeUInt32BE(src, 0);
+        pseudoHeader.writeUInt32BE(dst, 4);
+        pseudoHeader.writeUInt8(packet[9], 9);
+        pseudoHeader.writeUInt16BE(packet.length - payloadOffset, 10);
+        return pseudoHeader;
+    }
+
+    // Protocol Handling
+    switch (packet[9]) {
+        case 6: {
+            // TCP
+            const pseudoHeader = constructPseudoHeader();
+            const cksumOffset = payloadOffset + 16;
+            packet.writeUInt16BE(0, cksumOffset);
+            const cksum = checksum(Buffer.concat([pseudoHeader, packet.slice(payloadOffset)]));
+            packet.writeUInt16BE(cksum, cksumOffset);
+            break;
+        }
+        case 17: {
+            // UDP
+            const pseudoHeader = constructPseudoHeader();
+            const cksumOffset = payloadOffset + 6;
+            packet.writeUInt16BE(0, cksumOffset);
+            const cksum = checksum(Buffer.concat([pseudoHeader, packet.slice(payloadOffset)]));
+            packet.writeUInt16BE(cksum, cksumOffset);
+            break;
+        }
+        default: {
+            // No special handling
+        }
+    }
 }
 
 export async function server(
