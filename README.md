@@ -12,15 +12,19 @@ Tunnels traffic at layer 3 (IP) of the OSI model
 
 ### Requirements
 
--   Installed `libpcap`
+-   Dependencies
+    - Linux: `iproute2`
+    - MacOS: `libpcap`
 -   Special privileges
-    -   Linux: `CAP_NET_RAW`
-    -   MacOS: `/dev/bpf`
+    - Linux: `CAP_NET_ADMIN`
+    - MacOS: `/dev/bpf*`
 
 ### Mechanism
 
-This library uses `libpcap` internally to capture packets from the
-loopback interface and send them through the provided Pub/Sub transport.
+On Linux: uses TUN interfaces to communicate with the host.
+
+On MacOS: uses `libpcap` internally to capture/inject packets from the
+loopback interface.
 
 The tunneling mechanism has 2 roles: `server` and `client`.
 
