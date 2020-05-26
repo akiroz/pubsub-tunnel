@@ -13,8 +13,8 @@ Tunnels traffic at layer 3 (IP) of the OSI model
 ### Requirements
 
 -   Dependencies
-    - Linux: `iproute2`
-    - MacOS: `libpcap`
+    - Linux: `iproute2` (Included in most modern distros)
+    - MacOS: `libpcap` (Included in MacOS)
 -   Special privileges
     - Linux: `/dev/net/tun` + `CAP_NET_ADMIN`
     - MacOS: `/dev/bpf*`
