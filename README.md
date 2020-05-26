@@ -16,7 +16,7 @@ Tunnels traffic at layer 3 (IP) of the OSI model
     - Linux: `iproute2`
     - MacOS: `libpcap`
 -   Special privileges
-    - Linux: `CAP_NET_ADMIN`
+    - Linux: `/dev/net/tun` + `CAP_NET_ADMIN`
     - MacOS: `/dev/bpf*`
 
 ### Mechanism
