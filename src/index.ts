@@ -26,7 +26,11 @@ class NetworkDriver {
     pcapHeader = Buffer.alloc(4);
     pcapSession: PcapSession;
 
-    static async createSession(opts: { localAddress?: string; cidrBlock?: string }): Promise<NetworkDriver> {
+    static async createSession(opts: {
+        localAddress?: string;
+        cidrBlock?: string;
+        mtu?: number;
+    }): Promise<NetworkDriver> {
         const drv = new NetworkDriver();
         drv.platform = platform();
         if (drv.platform === "linux") {
@@ -46,7 +50,16 @@ class NetworkDriver {
             const nameEnd = [...ifr].indexOf(0);
             drv.tunName = ifr.toString("ascii", 0, nameEnd);
             const prefix = CIDR.mask(opts.cidrBlock);
-            await promisify(execFile)("ip", ["link", "set", drv.tunName, "up", "multicast", "off", "mtu", "1500"]);
+            await promisify(execFile)("ip", [
+                "link",
+                "set",
+                drv.tunName,
+                "up",
+                "multicast",
+                "off",
+                "mtu",
+                `${opts.mtu || 1500}`,
+            ]);
             await promisify(execFile)("ip", ["addr", "add", `${opts.localAddress}/${prefix}`, "dev", drv.tunName]);
         } else {
             const pcap = require("pcap");
@@ -149,6 +162,7 @@ export async function server(
         cidrBlock: string;
         localAddress?: string;
         sessionIdleTimeout?: number;
+        mtu?: number;
     }
 ): Promise<NetworkDriver> {
     const localIp = IP.toInt(platform() === "darwin" ? "127.0.0.1" : opts.localAddress);
@@ -201,6 +215,7 @@ export async function client(
         topic: string;
         bindAddress: string;
         localAddress?: string;
+        mtu?: number;
     }
 ): Promise<NetworkDriver> {
     const net = await NetworkDriver.createSession({
