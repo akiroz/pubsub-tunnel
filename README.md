@@ -14,9 +14,11 @@ Tunnels traffic at layer 3 (IP) of the OSI model
 
 -   Dependencies
     - Linux: `iproute2` (Included in most modern distros)
+    - Windows: `WSL` (Included with Windows 10)
     - MacOS: `libpcap` (Included in MacOS)
 -   Special privileges
     - Linux: `/dev/net/tun` + `CAP_NET_ADMIN`
+    - Windows: Same as Linux
     - MacOS: `/dev/bpf*`
 
 ### Mechanism
