@@ -8,8 +8,8 @@ import { PacketWithHeader, PcapSession } from "pcap";
 import { cidr as CIDR, ip as IP } from "node-cidr";
 
 export type PubSubClient = {
-    publish(topic: string, payload: Buffer): Promise<void>;
-    subscribe(topic: string, handler: (payload: Buffer) => Promise<void>): Promise<void>;
+    publish(topic: string, payload: Uint8Array | Buffer): Promise<void>;
+    subscribe(topic: string, handler: (payload: Uint8Array | Buffer) => Promise<void>): Promise<void>;
 };
 
 class NetworkDriver {
@@ -192,8 +192,9 @@ export async function server(
     }
 
     pubsub.subscribe(opts.topic, async (payload) => {
-        const id = payload.slice(0, 16);
-        const packet = payload.slice(16);
+        if (!Buffer.isBuffer(payload)) payload = Buffer.from(payload);
+        const id = (payload as Buffer).slice(0, 16);
+        const packet = (payload as Buffer).slice(16);
         const idStr = encodeBase64URL(id);
         const ip = idCache[idStr] || allocIp(idStr);
         ipCache.get(ip); // renew age
@@ -228,8 +229,9 @@ export async function client(
     const localIp = IP.toInt(platform() === "darwin" ? "127.0.0.1" : opts.localAddress);
 
     pubsub.subscribe(`${opts.topic}/${idStr}`, async (packet) => {
-        nat(packet, bindIp, localIp);
-        net.inject(packet);
+        if (!Buffer.isBuffer(packet)) packet = Buffer.from(packet);
+        nat(packet as Buffer, bindIp, localIp);
+        net.inject(packet as Buffer);
     });
 
     net.onPacket((packet) => {
