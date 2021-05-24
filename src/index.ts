@@ -191,7 +191,7 @@ export async function server(
         return newIp;
     }
 
-    pubsub.subscribe(opts.topic, async (payload) => {
+    await pubsub.subscribe(opts.topic, async (payload) => {
         if (!Buffer.isBuffer(payload)) payload = Buffer.from(payload);
         const id = (payload as Buffer).slice(0, 16);
         const packet = (payload as Buffer).slice(16);
